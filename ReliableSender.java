@@ -16,7 +16,7 @@ public class ReliableSender extends SenderProtocol {
 	private Packet[][] window;
 	
 	private int nextSeqNum;
-	private int oldestPosition;
+	private int oldestSeqNum;
 
 	ReliableSender(Channel aChannel, int aWindowSize, double aTimeout) {
 		channel = aChannel;
@@ -24,7 +24,7 @@ public class ReliableSender extends SenderProtocol {
 		windowSize = aWindowSize;
 		timeoutValue = aTimeout;
 		nextSeqNum = 1;
-		oldestPosition = 1;
+		oldestSeqNum = 1;
 		
 		window = new Packet[2][aWindowSize];
 	}
@@ -33,7 +33,7 @@ public class ReliableSender extends SenderProtocol {
 		
 		if ( window[0][(nextSeqNum) % windowSize] != null) {
 			blockData();
-			oldestPosition = nextSeqNum % windowSize;
+			oldestSeqNum = nextSeqNum - windowSize;
 		}
 
 		sentPacket = new Packet(nextSeqNum, aDataChunk);
@@ -49,24 +49,37 @@ public class ReliableSender extends SenderProtocol {
 	}
 
 	public void receive(Packet aPacket) {
-		Simulator.getInstance().log("sender receives " + aPacket);
-		int ackPosition = aPacket.getSeqNum() % windowSize;
-		
-		window[0][ackPosition] = null;
-		
-		if (ackPosition == oldestPosition) {
+		int ackSeqNum = aPacket.getSeqNum();
+		Simulator.getInstance().log("sender receives " + aPacket + "\nOldest: " + oldestSeqNum);
+
+		if (ackSeqNum >= oldestSeqNum) {
+			// We can move the window (oldestSeqNum)
+			
+			// All older packets should be set to null
+			for (int i = oldestSeqNum; i <= ackSeqNum; i++)
+				window[0][i % windowSize] = null;
+			
+			oldestSeqNum = ackSeqNum + 1; 
 			acceptData();
 			timer.stop();
 		}
+		else { 
+			// Window can't be moved - Resend requested
+			Packet rePacket = window[0][(ackSeqNum + 1) % windowSize];
 			
-//		if (aPacket.getSeqNum() == nextSeqNum) {
-//			nextSeqNum++;
-//			acceptData();
-//		}
+			timer.stop();
+			
+			if (rePacket != null) {
+				Simulator.getInstance().log("sender resends " + rePacket);
+				channel.send(rePacket);
+				timer.start(timeoutValue);
+			}
+		}
 	}
 
 	public void timeout(Timer aTimer) {
 		Simulator.getInstance().log("*** sender timeouts ***");
+		int oldestPosition = (oldestSeqNum - 1) % windowSize;
 		
 		for (int i = oldestPosition; i < (windowSize+oldestPosition); i++) {
 			if (window[0][i % windowSize] != null) {
