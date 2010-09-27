@@ -13,7 +13,7 @@ public class ReliableSender extends SenderProtocol {
 
 	private Packet sentPacket;
 
-	private Packet[][] window;
+	private Packet[] window;
 	
 	private int nextSeqNum;
 	private int oldestSeqNum;
@@ -26,72 +26,87 @@ public class ReliableSender extends SenderProtocol {
 		nextSeqNum = 1;
 		oldestSeqNum = 1;
 		
-		window = new Packet[2][aWindowSize];
+		window = new Packet[aWindowSize];
 	}
 
 	void send(Data aDataChunk) {
-		
-		if ( window[0][(nextSeqNum) % windowSize] != null) {
+		// nextSeqNum is equal to the seq num that is going to be sent.
+		// Check the nextSeqNum + 1 and -1 since the spot 0 is for e.g. seq num 1
+		// If it is not null --> We can not take more packets in the window --> Block state
+		if ( window[(nextSeqNum) % windowSize] != null) {
 			blockData();
 			oldestSeqNum = (nextSeqNum - windowSize)+1;
-			Simulator.getInstance().log("Packet "+ oldestSeqNum + " (in send)");
+			Simulator.getInstance().log("Blocked: Oldest seq num = "+ oldestSeqNum + " (send)");
 		}
 
+		// Create the packet with the nextSeqNum with the data and put it onto the channel
 		sentPacket = new Packet(nextSeqNum, aDataChunk);
 		channel.send(sentPacket);	
 
-		window[0][ (nextSeqNum-1) % windowSize ] = sentPacket;
-		
-		Simulator.getInstance().log("sender sent " + sentPacket);
+		// Put in the packet into the window, so that we can reuse this packet when needed
+		window[ (nextSeqNum-1) % windowSize ] = sentPacket;
 
+		// Start the timeout timer
 		timer.start(timeoutValue);
 		
-		nextSeqNum++;
+		// Add up the nextSeqNum so that we have the right number next time we arrive in send
+		nextSeqNum++;		
+		
+		Simulator.getInstance().log("Sent: " + sentPacket + " (send)");
 	}
 
 	public void receive(Packet aPacket) {
 		int ackSeqNum = aPacket.getSeqNum();
-		Simulator.getInstance().log("sender receives " + aPacket + "\nOldest: " + oldestSeqNum);
+		Simulator.getInstance().log("Receives: " + aPacket + " (receive) - Oldest: " + oldestSeqNum);
 
+		// If the ackSeqNum is higher or equal to the oldestSeqNum it means we can move the window
+		// and that the receiver has got good stuff
 		if (ackSeqNum >= oldestSeqNum) {
-			// We can move the window (oldestSeqNum)
-			
-			// All older packets should be set to null
+			// All older packets should be set to null so that we get empty spaces in the array
 			for (int i = oldestSeqNum; i <= ackSeqNum; i++) {
-				window[0][i % windowSize] = null;
-				Simulator.getInstance().log("Resetting " + i % windowSize);
+				window[(i - 1) % windowSize] = null;
+				//Simulator.getInstance().log("Resetting " + i % windowSize);
 			}
-			
+
+			// We can move the window (oldestSeqNum)
 			oldestSeqNum = ackSeqNum + 1; 
 			acceptData();
-			timer.stop();
-		}
-		else { 
+			
+			// If position of the oldestSeqNum is empty, the window is empty
+			if (window[(oldestSeqNum - 1) % windowSize] == null)
+				timer.stop();
+		} else { 
 			// Window can't be moved - Resend requested
-			Packet rePacket = window[0][(ackSeqNum + 1) % windowSize];
+			Packet rePacket = window[(ackSeqNum) % windowSize];
 			
 			timer.stop();
 			
 			if (rePacket != null) {
-				Simulator.getInstance().log("sender resends " + rePacket);
+				// Send packet
 				channel.send(rePacket);
+				// Resets the timeout timer
 				timer.start(timeoutValue);
+				
+				Simulator.getInstance().log("Resends: " + rePacket + " (receive)");
 			}
 		}
 	}
 
 	public void timeout(Timer aTimer) {
-		Simulator.getInstance().log("*** sender timeouts ***");
+		// Stop timer for safety
+		timer.stop();
+
+		Simulator.getInstance().log("******* Timeout *******");
 		int oldestPosition = (oldestSeqNum - 1) % windowSize;
 		
 		for (int i = oldestPosition; i < (windowSize+oldestPosition); i++) {
-			if (window[0][i % windowSize] != null) {
-				Simulator.getInstance().log("sender (timeout) resends " + window[0][i % windowSize]);
-				channel.send(window[0][i % windowSize]);
+			if (window[i % windowSize] != null) {
+				Simulator.getInstance().log("resends " + window[i % windowSize] + " (timeout)");
+				channel.send(window[i % windowSize]);
 			}
 		}
 		
+		// Reset the timer
 		timer.start(timeoutValue);
-		//channel.send(sentPacket);
 	}
 }
