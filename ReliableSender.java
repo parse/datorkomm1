@@ -33,7 +33,8 @@ public class ReliableSender extends SenderProtocol {
 		
 		if ( window[0][(nextSeqNum) % windowSize] != null) {
 			blockData();
-			oldestSeqNum = nextSeqNum - windowSize;
+			oldestSeqNum = (nextSeqNum - windowSize)+1;
+			Simulator.getInstance().log("Packet "+ oldestSeqNum + " (in send)");
 		}
 
 		sentPacket = new Packet(nextSeqNum, aDataChunk);
@@ -56,8 +57,10 @@ public class ReliableSender extends SenderProtocol {
 			// We can move the window (oldestSeqNum)
 			
 			// All older packets should be set to null
-			for (int i = oldestSeqNum; i <= ackSeqNum; i++)
+			for (int i = oldestSeqNum; i <= ackSeqNum; i++) {
 				window[0][i % windowSize] = null;
+				Simulator.getInstance().log("Resetting " + i % windowSize);
+			}
 			
 			oldestSeqNum = ackSeqNum + 1; 
 			acceptData();
@@ -83,7 +86,7 @@ public class ReliableSender extends SenderProtocol {
 		
 		for (int i = oldestPosition; i < (windowSize+oldestPosition); i++) {
 			if (window[0][i % windowSize] != null) {
-				Simulator.getInstance().log("sender resends " + window[0][i % windowSize]);
+				Simulator.getInstance().log("sender (timeout) resends " + window[0][i % windowSize]);
 				channel.send(window[0][i % windowSize]);
 			}
 		}
