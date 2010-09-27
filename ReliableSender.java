@@ -74,9 +74,13 @@ public class ReliableSender extends SenderProtocol {
 			// Window can't be moved - Resend requested
 			Packet rePacket = window[ackSeqNum % windowSize];
 			
-			channel.send(rePacket);
-			timer.start(timeoutValue);
-			//Simulator.getInstance().log("*** Resends: " + rePacket + " (receive)");
+			timer.stop();
+			
+			if (rePacket != null) {
+				channel.send(rePacket);
+				timer.start(timeoutValue);
+				//Simulator.getInstance().log("*** Resends: " + rePacket + " (receive)");
+			}
 		}
 	}
 
